@@ -11,12 +11,13 @@ DEFAULT_SCAN_INTERVAL = 30  # seconds
 CONF_HOST = "host"
 CONF_PORT = "port"
 CONF_TOKEN = "token"
+CONF_SYSTEM_PROMPT = "system_prompt"
 
 # Entity unique ID prefixes
 UNIQUE_ID_PREFIX = "grok_voice"
 
-# Platform list (Phase A)
-PLATFORMS = ["sensor", "number", "select", "text"]
+# Platform list (Phase A) — system prompt moved to Options Flow
+PLATFORMS = ["sensor", "number", "select"]
 
 # Voice options (xAI flagship set as of 2026)
 VOICE_OPTIONS = [
@@ -47,12 +48,13 @@ VOICE_OPTIONS = [
     "leo",
 ]
 
-# Model options (extend as new models appear)
+# Model options (must include values the microservice actually uses)
 MODEL_OPTIONS = [
+    "grok-voice-latest",
     "grok-voice-think-fast-1.0",
     "grok-voice-think-fast-2.0",
     "latest",
 ]
 
-# System prompt max length (HA TextEntity native_max)
+# System prompt max length (for Options Flow validation)
 SYSTEM_PROMPT_MAX_LENGTH = 8192

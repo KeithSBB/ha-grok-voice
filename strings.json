@@ -19,5 +19,20 @@
     "abort": {
       "already_configured": "This Grok Voice instance is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Grok Voice Options",
+        "description": "Edit the system prompt used by the voice agent. Changes are pushed live to the microservice.",
+        "data": {
+          "system_prompt": "System Prompt"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to push the system prompt to the microservice.",
+      "prompt_too_long": "System prompt exceeds the maximum allowed length (8192 characters)."
+    }
   }
 }
