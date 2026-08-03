@@ -49,7 +49,20 @@ class GrokVoiceSystemPromptText(
 
     @property
     def native_value(self) -> str | None:
+        """Return the full system prompt (used by the text UI)."""
         return self.coordinator.data.get("system_prompt")
+
+    @property
+    def state(self) -> str | None:
+        """
+        Core state machine still enforces a 255-char limit.
+        Return a truncated version so the entity stays available.
+        The full value remains available via native_value for editing.
+        """
+        value = self.native_value or ""
+        if len(value) > 255:
+            return value[:252] + "..."
+        return value
 
     async def async_set_value(self, value: str) -> None:
         """Set the system prompt."""
