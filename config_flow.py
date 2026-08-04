@@ -103,9 +103,24 @@ class GrokVoiceOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         self._edit_id: str | None = None
+        self._modulators: list[dict[str, Any]] | None = None
 
     def _mods(self) -> list[dict[str, Any]]:
-        return modulators_from_options(dict(self.config_entry.options))
+        if self._modulators is None:
+            self._modulators = modulators_from_options(dict(self.config_entry.options))
+        return self._modulators
+
+    async def _persist_modulators(self, modulators: list[dict[str, Any]]) -> None:
+        self._modulators = modulators
+        await self._save_options({CONF_PERSONALITY_MODULATORS: modulators})
+        coord = self._coordinator()
+        if coord is not None:
+            try:
+                await coord.async_push_personality_modulators(modulators)
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.error("Failed to push personality_modulators: %s", err)
+            if coord.personality_tracker:
+                await coord.personality_tracker.async_rebuild()
 
     def _coordinator(self):
         return self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
@@ -124,6 +139,21 @@ class GrokVoiceOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_prompt()
             if next_step == "modulators":
                 return await self.async_step_modulators()
+            if next_step == "done":
+                # Ensure latest in-memory modulators are persisted
+                if self._modulators is not None:
+                    await self._save_options(
+                        {CONF_PERSONALITY_MODULATORS: self._modulators}
+                    )
+                return self.async_create_entry(
+                    title="",
+                    data=dict(self.config_entry.options)
+                    if self._modulators is None
+                    else {
+                        **dict(self.config_entry.options),
+                        CONF_PERSONALITY_MODULATORS: self._modulators,
+                    },
+                )
             return self.async_create_entry(title="", data=dict(self.config_entry.options))
 
         return self.async_show_form(
