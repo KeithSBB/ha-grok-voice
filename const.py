@@ -2,53 +2,28 @@
 
 DOMAIN = "grok_voice"
 
-# Default connection settings
 DEFAULT_HOST = "192.168.1.100"
 DEFAULT_PORT = 10700
 DEFAULT_SCAN_INTERVAL = 30  # seconds
+DEFAULT_STATE_PUSH_INTERVAL = 20  # seconds for personality states
 
-# Config entry keys
 CONF_HOST = "host"
 CONF_PORT = "port"
 CONF_TOKEN = "token"
 CONF_SYSTEM_PROMPT = "system_prompt"
+CONF_PERSONALITY_MODULATORS = "personality_modulators"
 
-# Entity unique ID prefixes
 UNIQUE_ID_PREFIX = "grok_voice"
 
-# Platform list (Phase A) — system prompt moved to Options Flow
 PLATFORMS = ["sensor", "number", "select"]
 
-# Voice options (xAI flagship set as of 2026)
 VOICE_OPTIONS = [
-    "ara",
-    "atlas",
-    "altair",
-    "carina",
-    "castor",
-    "celeste",
-    "cosmo",
-    "helix",
-    "helios",
-    "iris",
-    "kepler",
-    "lumen",
-    "luna",
-    "lux",
-    "naksh",
-    "orion",
-    "perseus",
-    "rex",
-    "rigel",
-    "sal",
-    "sirius",
-    "ursa",
-    "zagan",
-    "eve",
-    "leo",
+    "ara", "atlas", "altair", "carina", "castor", "celeste", "cosmo",
+    "helix", "helios", "iris", "kepler", "lumen", "luna", "lux", "naksh",
+    "orion", "perseus", "rex", "rigel", "sal", "sirius", "ursa", "zagan",
+    "eve", "leo",
 ]
 
-# Model options (must include values the microservice actually uses)
 MODEL_OPTIONS = [
     "grok-voice-latest",
     "grok-voice-think-fast-1.0",
@@ -56,5 +31,24 @@ MODEL_OPTIONS = [
     "latest",
 ]
 
-# System prompt max length (for Options Flow validation)
 SYSTEM_PROMPT_MAX_LENGTH = 8192
+
+ASPECT_OPTIONS = [
+    "warmth",
+    "verbosity",
+    "humor",
+    "energy",
+    "caution",
+    "creativity",
+]
+
+ASPECT_LABELS = {
+    "warmth": "Warmth",
+    "verbosity": "Verbosity",
+    "humor": "Humor",
+    "energy": "Energy",
+    "caution": "Caution",
+    "creativity": "Creativity",
+}
+
+CURVE_OPTIONS = ["linear", "sigmoid", "step"]

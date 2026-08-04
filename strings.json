@@ -24,15 +24,45 @@
     "step": {
       "init": {
         "title": "Grok Voice Options",
-        "description": "Edit the system prompt used by the voice agent. Changes are pushed live to the microservice.",
+        "description": "Choose what to configure.",
+        "data": {
+          "next_step": "Section"
+        }
+      },
+      "prompt": {
+        "title": "System Prompt",
+        "description": "Full system prompt for the voice agent. Changes are pushed live.",
         "data": {
           "system_prompt": "System Prompt"
+        }
+      },
+      "modulators": {
+        "title": "Personality Modulators",
+        "description": "Currently configured: {count}. Add, edit, or remove modulators.",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "modulator_form": {
+        "title": "Edit Modulator",
+        "description": "Map a numeric sensor to a personality aspect.",
+        "data": {
+          "entity_id": "Sensor",
+          "aspect": "Aspect",
+          "min": "Min value",
+          "max": "Max value",
+          "curve": "Curve",
+          "weight": "Weight (0–2)",
+          "invert": "Invert",
+          "enabled": "Enabled"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to push the system prompt to the microservice.",
-      "prompt_too_long": "System prompt exceeds the maximum allowed length (8192 characters)."
+      "cannot_connect": "Failed to push settings to the microservice.",
+      "prompt_too_long": "System prompt exceeds 8192 characters.",
+      "invalid_range": "Min must be less than max.",
+      "missing_entity": "Select a sensor entity."
     }
   }
 }

@@ -1,19 +1,15 @@
-"""The Grok Voice Home Assistant custom component.
-
-Provides configuration UI and sensors for the Grok Voice Microservice
-(xAI Realtime speech-to-speech with ESPHome LVA / Voice PE satellites).
-"""
+"""The Grok Voice Home Assistant custom component."""
 from __future__ import annotations
 
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN, PLATFORMS
+from .const import DEFAULT_STATE_PUSH_INTERVAL, DOMAIN, PLATFORMS
 from .coordinator import GrokVoiceDataUpdateCoordinator
+from .personality import PersonalityTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +24,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         session=session,
     )
 
+    tracker = PersonalityTracker(
+        hass=hass,
+        entry_id=entry.entry_id,
+        get_modulators=coordinator.get_modulators,
+        post_states=coordinator.async_post_personality_states,
+        interval_seconds=DEFAULT_STATE_PUSH_INTERVAL,
+    )
+    coordinator.personality_tracker = tracker
+
     await coordinator.async_config_entry_first_refresh()
+    await tracker.async_start()
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
@@ -42,6 +48,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    coordinator: GrokVoiceDataUpdateCoordinator | None = hass.data.get(DOMAIN, {}).get(
+        entry.entry_id
+    )
+    if coordinator and coordinator.personality_tracker:
+        await coordinator.personality_tracker.async_stop()
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)

@@ -17,12 +17,13 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
+from .personality import modulators_from_options
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Class to manage fetching Grok Voice data from the microservice."""
+    """Fetch Grok Voice data and push personality config/states."""
 
     def __init__(
         self,
@@ -30,12 +31,12 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         entry: ConfigEntry,
         session: ClientSession,
     ) -> None:
-        """Initialize."""
         self.entry = entry
         self.session = session
         self.host = entry.data[CONF_HOST]
         self.port = entry.data[CONF_PORT]
         self.token = entry.data[CONF_TOKEN]
+        self.personality_tracker = None  # set by __init__.py
 
         super().__init__(
             hass,
@@ -51,27 +52,36 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}"}
 
-    async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from /health, /config and /usage.
+    def get_modulators(self) -> list[dict[str, Any]]:
+        return modulators_from_options(dict(self.entry.options))
 
-        Until the microservice implements these endpoints the coordinator
-        returns a safe placeholder dict so entities can still be created.
-        """
+    async def _async_update_data(self) -> dict[str, Any]:
         data: dict[str, Any] = {
             "status": "unknown",
             "system_prompt": "",
             "voice": "rex",
-            "model": "grok-voice-think-fast-1.0",
+            "model": "grok-voice-latest",
             "conversation_timeout_seconds": 10,
             "conversation_persistence_seconds": 300,
             "input_tokens": 0,
             "output_tokens": 0,
             "estimated_cost": 0.0,
             "active_satellites": 0,
+            "personality_sync": "never",
+            "personality_modulator_count": 0,
         }
 
+        tracker = self.personality_tracker
+        if tracker is not None:
+            data["personality_sync"] = tracker.last_sync_status
+            data["personality_last_sync_at"] = tracker.last_sync_at
+            data["personality_last_error"] = tracker.last_error
+
+        data["personality_modulator_count"] = len(
+            [m for m in self.get_modulators() if m.get("enabled", True)]
+        )
+
         try:
-            # Health
             async with self.session.get(
                 f"{self.base_url}/health",
                 headers=self._headers(),
@@ -86,7 +96,6 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 else:
                     data["status"] = f"http_{resp.status}"
 
-            # Config (optional until implemented)
             try:
                 async with self.session.get(
                     f"{self.base_url}/config",
@@ -111,9 +120,8 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             }
                         )
             except ClientError:
-                _LOGGER.debug(" /config not available yet")
+                _LOGGER.debug("/config not available")
 
-            # Usage (optional until implemented)
             try:
                 async with self.session.get(
                     f"{self.base_url}/usage",
@@ -130,7 +138,7 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             }
                         )
             except ClientError:
-                _LOGGER.debug("/usage not available yet")
+                _LOGGER.debug("/usage not available")
 
         except ClientError as err:
             raise UpdateFailed(f"Error communicating with Grok Voice service: {err}") from err
@@ -138,7 +146,6 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return data
 
     async def async_set_config(self, key: str, value: Any) -> None:
-        """Push a single config key to the microservice (PUT /config)."""
         payload = {key: value}
         try:
             async with self.session.put(
@@ -152,6 +159,25 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     raise UpdateFailed(f"Failed to update config: HTTP {resp.status} – {text}")
         except ClientError as err:
             raise UpdateFailed(f"Error updating config: {err}") from err
-
-        # Force a refresh so entities see the new value
         await self.async_request_refresh()
+
+    async def async_push_personality_modulators(self, modulators: list[dict[str, Any]]) -> None:
+        await self.async_set_config("personality_modulators", modulators)
+
+    async def async_post_personality_states(
+        self, states: dict[str, float], timestamp: str
+    ) -> None:
+        try:
+            async with self.session.post(
+                f"{self.base_url}/personality/states",
+                headers={**self._headers(), "Content-Type": "application/json"},
+                json={"states": states, "timestamp": timestamp},
+                timeout=10,
+            ) as resp:
+                if resp.status not in (200, 204):
+                    text = await resp.text()
+                    raise UpdateFailed(
+                        f"Failed to post personality states: HTTP {resp.status} – {text}"
+                    )
+        except ClientError as err:
+            raise UpdateFailed(f"Error posting personality states: {err}") from err

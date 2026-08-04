@@ -29,6 +29,7 @@ async def async_setup_entry(
         GrokVoiceOutputTokensSensor(coordinator, entry),
         GrokVoiceEstimatedCostSensor(coordinator, entry),
         GrokVoiceActiveSatellitesSensor(coordinator, entry),
+        GrokVoicePersonalitySyncSensor(coordinator, entry),
     ]
     async_add_entities(entities)
 
@@ -121,3 +122,22 @@ class GrokVoiceActiveSatellitesSensor(GrokVoiceBaseSensor):
     @property
     def native_value(self) -> int | None:
         return self.coordinator.data.get("active_satellites")
+        
+class GrokVoicePersonalitySyncSensor(GrokVoiceBaseSensor):
+    """Personality sync status."""
+
+    def __init__(self, coordinator: GrokVoiceDataUpdateCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "personality_sync", "Personality Sync")
+        self._attr_icon = "mdi:brain"
+
+    @property
+    def native_value(self) -> str | None:
+        return self.coordinator.data.get("personality_sync")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "last_sync_at": self.coordinator.data.get("personality_last_sync_at"),
+            "last_error": self.coordinator.data.get("personality_last_error"),
+            "modulator_count": self.coordinator.data.get("personality_modulator_count", 0),
+        }
