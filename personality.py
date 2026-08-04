@@ -1,8 +1,9 @@
 """Personality modulator state tracking and push to microservice."""
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from homeassistant.core import Event, HomeAssistant, callback
@@ -10,11 +11,13 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
 )
-from datetime import timedelta
 
 from .const import CONF_PERSONALITY_MODULATORS
 
 _LOGGER = logging.getLogger(__name__)
+
+# Coalesce rapid sensor updates
+_DEBOUNCE_SECONDS = 5.0
 
 
 class PersonalityTracker:
@@ -36,6 +39,7 @@ class PersonalityTracker:
         self._unsub_state: Callable[[], None] | None = None
         self._unsub_interval: Callable[[], None] | None = None
         self._entity_ids: set[str] = set()
+        self._debounce_task: asyncio.Task | None = None
         self.last_sync_status: str = "never"
         self.last_sync_at: str | None = None
         self.last_error: str | None = None
@@ -44,6 +48,8 @@ class PersonalityTracker:
         await self.async_rebuild()
 
     async def async_stop(self) -> None:
+        if self._debounce_task and not self._debounce_task.done():
+            self._debounce_task.cancel()
         self._unsubscribe()
 
     def _unsubscribe(self) -> None:
@@ -55,7 +61,6 @@ class PersonalityTracker:
             self._unsub_interval = None
 
     async def async_rebuild(self) -> None:
-        """Rebuild listeners from current modulator list and push config+states."""
         self._unsubscribe()
         mods = self._get_modulators()
         self._entity_ids = {
@@ -81,11 +86,24 @@ class PersonalityTracker:
 
     @callback
     def _on_state_change(self, event: Event) -> None:
-        self.hass.async_create_task(self._async_push_states())
+        self._schedule_debounced_push()
 
     @callback
     def _on_interval(self, _now) -> None:
         self.hass.async_create_task(self._async_push_states())
+
+    def _schedule_debounced_push(self) -> None:
+        if self._debounce_task and not self._debounce_task.done():
+            self._debounce_task.cancel()
+
+        async def _delayed() -> None:
+            try:
+                await asyncio.sleep(_DEBOUNCE_SECONDS)
+                await self._async_push_states()
+            except asyncio.CancelledError:
+                return
+
+        self._debounce_task = self.hass.async_create_task(_delayed())
 
     async def _async_push_states(self) -> None:
         if not self._entity_ids:

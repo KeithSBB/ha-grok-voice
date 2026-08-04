@@ -103,32 +103,42 @@ class GrokVoiceOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         self._edit_id: str | None = None
+        self._selected_id: str | None = None
         self._modulators: list[dict[str, Any]] | None = None
 
     def _mods(self) -> list[dict[str, Any]]:
         if self._modulators is None:
             self._modulators = modulators_from_options(dict(self.config_entry.options))
-        return self._modulators
-
-    async def _persist_modulators(self, modulators: list[dict[str, Any]]) -> None:
-        self._modulators = modulators
-        await self._save_options({CONF_PERSONALITY_MODULATORS: modulators})
-        coord = self._coordinator()
-        if coord is not None:
-            try:
-                await coord.async_push_personality_modulators(modulators)
-            except Exception as err:  # pylint: disable=broad-except
-                _LOGGER.error("Failed to push personality_modulators: %s", err)
-            if coord.personality_tracker:
-                await coord.personality_tracker.async_rebuild()
+        return list(self._modulators)
 
     def _coordinator(self):
         return self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
 
-    async def _save_options(self, updates: dict[str, Any]) -> None:
-        new_opts = dict(self.config_entry.options)
-        new_opts.update(updates)
-        self.hass.config_entries.async_update_entry(self.config_entry, options=new_opts)
+    def _options_snapshot(self) -> dict[str, Any]:
+        """Build full options dict from entry + in-memory modulators."""
+        opts = dict(self.config_entry.options)
+        if self._modulators is not None:
+            opts[CONF_PERSONALITY_MODULATORS] = self._modulators
+        return opts
+
+    async def _persist_modulators(self, modulators: list[dict[str, Any]]) -> str | None:
+        """Save to entry options and push to microservice. Returns error key or None."""
+        self._modulators = modulators
+        opts = dict(self.config_entry.options)
+        opts[CONF_PERSONALITY_MODULATORS] = modulators
+        self.hass.config_entries.async_update_entry(self.config_entry, options=opts)
+
+        coord = self._coordinator()
+        if coord is None:
+            return None
+        try:
+            await coord.async_push_personality_modulators(modulators)
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.error("Failed to push personality_modulators: %s", err)
+            return "cannot_connect"
+        if coord.personality_tracker:
+            await coord.personality_tracker.async_rebuild()
+        return None
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -139,33 +149,19 @@ class GrokVoiceOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_prompt()
             if next_step == "modulators":
                 return await self.async_step_modulators()
-            if next_step == "done":
-                # Ensure latest in-memory modulators are persisted
-                if self._modulators is not None:
-                    await self._save_options(
-                        {CONF_PERSONALITY_MODULATORS: self._modulators}
-                    )
-                return self.async_create_entry(
-                    title="",
-                    data=dict(self.config_entry.options)
-                    if self._modulators is None
-                    else {
-                        **dict(self.config_entry.options),
-                        CONF_PERSONALITY_MODULATORS: self._modulators,
-                    },
-                )
-            return self.async_create_entry(title="", data=dict(self.config_entry.options))
+            # Done — commit in-memory list into the options entry result
+            return self.async_create_entry(title="", data=self._options_snapshot())
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required("next_step", default="prompt"): selector.SelectSelector(
+                    vol.Required("next_step", default="modulators"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
                                 {"value": "prompt", "label": "System Prompt"},
                                 {"value": "modulators", "label": "Personality Modulators"},
-                                {"value": "done", "label": "Done"},
+                                {"value": "done", "label": "Done / Save & Close"},
                             ],
                             mode=selector.SelectSelectorMode.LIST,
                         )
@@ -195,7 +191,11 @@ class GrokVoiceOptionsFlow(config_entries.OptionsFlow):
                         _LOGGER.error("Failed to update system prompt: %s", err)
                         errors["base"] = "cannot_connect"
                 if not errors:
-                    await self._save_options({CONF_SYSTEM_PROMPT: prompt})
+                    opts = self._options_snapshot()
+                    opts[CONF_SYSTEM_PROMPT] = prompt
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry, options=opts
+                    )
                     return await self.async_step_init()
 
         return self.async_show_form(
@@ -218,34 +218,36 @@ class GrokVoiceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_modulators(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        """List each modulator once; Add or select one to manage."""
         mods = self._mods()
         if user_input is not None:
-            action = user_input.get("action")
-            if action == "add":
+            choice = user_input.get("choice")
+            if choice == "add":
                 self._edit_id = None
                 return await self.async_step_modulator_form()
-            if action and action.startswith("edit:"):
-                self._edit_id = action.split(":", 1)[1]
-                return await self.async_step_modulator_form()
-            if action and action.startswith("remove:"):
-                rid = action.split(":", 1)[1]
-                new_list = [m for m in mods if m["id"] != rid]
-                await self._persist_modulators(new_list)
-                return await self.async_step_modulators()
+            if choice == "back":
+                return await self.async_step_init()
+            if choice and choice.startswith("mod:"):
+                self._selected_id = choice[4:]
+                return await self.async_step_modulator_action()
             return await self.async_step_init()
 
-        options = [{"value": "add", "label": "➕ Add modulator"}]
+        options = [{"value": "add", "label": "➕ Add new modulator"}]
         for m in mods:
-            label = f"{m['entity_id']} → {m['aspect']}" + ("" if m.get("enabled", True) else " (disabled)")
-            options.append({"value": f"edit:{m['id']}", "label": f"✏️ {label}"})
-            options.append({"value": f"remove:{m['id']}", "label": f"🗑️ Remove {m['entity_id']}"})
+            enabled = "✓" if m.get("enabled", True) else "✗"
+            options.append(
+                {
+                    "value": f"mod:{m['id']}",
+                    "label": f"{enabled} {m['entity_id']} → {m['aspect']}",
+                }
+            )
         options.append({"value": "back", "label": "← Back"})
 
         return self.async_show_form(
             step_id="modulators",
             data_schema=vol.Schema(
                 {
-                    vol.Required("action", default="add"): selector.SelectSelector(
+                    vol.Required("choice", default="add"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=options,
                             mode=selector.SelectSelectorMode.LIST,
@@ -254,6 +256,74 @@ class GrokVoiceOptionsFlow(config_entries.OptionsFlow):
                 }
             ),
             description_placeholders={"count": str(len(mods))},
+        )
+
+    async def async_step_modulator_action(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """After picking one modulator: Edit or Delete."""
+        mods = self._mods()
+        selected = next((m for m in mods if m["id"] == self._selected_id), None)
+        if selected is None:
+            return await self.async_step_modulators()
+
+        if user_input is not None:
+            action = user_input.get("action")
+            if action == "edit":
+                self._edit_id = self._selected_id
+                return await self.async_step_modulator_form()
+            if action == "delete":
+                new_list = [m for m in mods if m["id"] != self._selected_id]
+                err = await self._persist_modulators(new_list)
+                self._selected_id = None
+                if err:
+                    return self.async_show_form(
+                        step_id="modulator_action",
+                        data_schema=vol.Schema(
+                            {
+                                vol.Required("action", default="edit"): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=[
+                                            {"value": "edit", "label": "Edit"},
+                                            {"value": "delete", "label": "Delete"},
+                                            {"value": "back", "label": "← Back"},
+                                        ],
+                                        mode=selector.SelectSelectorMode.LIST,
+                                    )
+                                )
+                            }
+                        ),
+                        errors={"base": err},
+                        description_placeholders={
+                            "entity": selected["entity_id"],
+                            "aspect": selected["aspect"],
+                        },
+                    )
+                return await self.async_step_modulators()
+            # back
+            self._selected_id = None
+            return await self.async_step_modulators()
+
+        return self.async_show_form(
+            step_id="modulator_action",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("action", default="edit"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": "edit", "label": "✏️ Edit this modulator"},
+                                {"value": "delete", "label": "🗑️ Delete this modulator"},
+                                {"value": "back", "label": "← Back to list"},
+                            ],
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+            description_placeholders={
+                "entity": selected["entity_id"],
+                "aspect": selected["aspect"],
+            },
         )
 
     async def async_step_modulator_form(
@@ -298,12 +368,16 @@ class GrokVoiceOptionsFlow(config_entries.OptionsFlow):
                     new_list = [new_mod if m["id"] == mid else m for m in mods]
                 else:
                     new_list = mods + [new_mod]
-                await self._persist_modulators(new_list)
-                self._edit_id = None
-                return await self.async_step_modulators()
+                err = await self._persist_modulators(new_list)
+                if err:
+                    errors["base"] = err
+                else:
+                    self._edit_id = None
+                    self._selected_id = None
+                    return await self.async_step_modulators()
 
         defaults = existing or {
-            "entity_id": "",
+            "entity_id": None,
             "aspect": "warmth",
             "min": 0.0,
             "max": 100.0,
@@ -313,34 +387,37 @@ class GrokVoiceOptionsFlow(config_entries.OptionsFlow):
             "enabled": True,
         }
 
+        entity_default = defaults.get("entity_id") or vol.UNDEFINED
+        schema_dict: dict[Any, Any] = {
+            vol.Required("entity_id", default=entity_default): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Required("aspect", default=defaults.get("aspect", "warmth")): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        {"value": a, "label": a.capitalize()} for a in ASPECT_OPTIONS
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Required("min", default=float(defaults.get("min", 0))): vol.Coerce(float),
+            vol.Required("max", default=float(defaults.get("max", 100))): vol.Coerce(float),
+            vol.Required("curve", default=defaults.get("curve", "linear")): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=CURVE_OPTIONS,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Required("weight", default=float(defaults.get("weight", 1.0))): vol.All(
+                vol.Coerce(float), vol.Range(min=0.0, max=2.0)
+            ),
+            vol.Required("invert", default=bool(defaults.get("invert", False))): bool,
+            vol.Required("enabled", default=bool(defaults.get("enabled", True))): bool,
+        }
+
         return self.async_show_form(
             step_id="modulator_form",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("entity_id", default=defaults.get("entity_id") or vol.UNDEFINED): selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain="sensor")
-                    ),
-                    vol.Required("aspect", default=defaults.get("aspect", "warmth")): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=ASPECT_OPTIONS,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    vol.Required("min", default=float(defaults.get("min", 0))): vol.Coerce(float),
-                    vol.Required("max", default=float(defaults.get("max", 100))): vol.Coerce(float),
-                    vol.Required("curve", default=defaults.get("curve", "linear")): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=CURVE_OPTIONS,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    vol.Required("weight", default=float(defaults.get("weight", 1.0))): vol.All(
-                        vol.Coerce(float), vol.Range(min=0.0, max=2.0)
-                    ),
-                    vol.Required("invert", default=bool(defaults.get("invert", False))): bool,
-                    vol.Required("enabled", default=bool(defaults.get("enabled", True))): bool,
-                }
-            ),
+            data_schema=vol.Schema(schema_dict),
             errors=errors,
         )
 

@@ -38,7 +38,14 @@
       },
       "modulators": {
         "title": "Personality Modulators",
-        "description": "Currently configured: {count}. Add, edit, or remove modulators.",
+        "description": "Configured: {count}. Select a modulator to edit or delete, or add a new one.",
+        "data": {
+          "choice": "Choose"
+        }
+      },
+      "modulator_action": {
+        "title": "Manage modulator",
+        "description": "{entity} → {aspect}",
         "data": {
           "action": "Action"
         }
