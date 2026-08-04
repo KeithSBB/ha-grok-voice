@@ -421,13 +421,4 @@ class GrokVoiceOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def _persist_modulators(self, modulators: list[dict[str, Any]]) -> None:
-        await self._save_options({CONF_PERSONALITY_MODULATORS: modulators})
-        coord = self._coordinator()
-        if coord is not None:
-            try:
-                await coord.async_push_personality_modulators(modulators)
-            except Exception as err:  # pylint: disable=broad-except
-                _LOGGER.error("Failed to push personality_modulators: %s", err)
-            if coord.personality_tracker:
-                await coord.personality_tracker.async_rebuild()
+    
