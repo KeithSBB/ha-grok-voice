@@ -77,6 +77,7 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "personality_energy": 0.5,
             "personality_caution": 0.5,
             "personality_creativity": 0.5,
+            "web_search": False,
         }
 
         tracker = self.personality_tracker
@@ -125,6 +126,7 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                     "conversation_persistence_seconds",
                                     data["conversation_persistence_seconds"],
                                 ),
+                                "web_search": bool(cfg.get("web_search", False)),
                             }
                         )
             except ClientError:

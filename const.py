@@ -15,7 +15,7 @@ CONF_PERSONALITY_MODULATORS = "personality_modulators"
 
 UNIQUE_ID_PREFIX = "grok_voice"
 
-PLATFORMS = ["sensor", "number", "select"]
+PLATFORMS = ["sensor", "number", "select", "switch"]
 
 VOICE_OPTIONS = [
     "ara", "atlas", "altair", "carina", "castor", "celeste", "cosmo",
