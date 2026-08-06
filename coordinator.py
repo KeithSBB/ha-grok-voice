@@ -69,6 +69,14 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "active_satellites": 0,
             "personality_sync": "never",
             "personality_modulator_count": 0,
+            "personality_vector": {},
+            "personality_fragment": "",
+            "personality_warmth": 0.5,
+            "personality_verbosity": 0.5,
+            "personality_humor": 0.5,
+            "personality_energy": 0.5,
+            "personality_caution": 0.5,
+            "personality_creativity": 0.5,
         }
 
         tracker = self.personality_tracker
@@ -139,6 +147,26 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         )
             except ClientError:
                 _LOGGER.debug("/usage not available")
+                
+            # Personality vector / fragment (for sensors)
+            try:
+                async with self.session.get(
+                    f"{self.base_url}/personality",
+                    headers=self._headers(),
+                    timeout=10,
+                ) as resp:
+                    if resp.status == 200:
+                        pers = await resp.json()
+                        vector = pers.get("vector") or {}
+                        data["personality_vector"] = vector
+                        data["personality_fragment"] = pers.get("fragment") or ""
+                        data["personality_fragment_updated_at"] = pers.get(
+                            "fragment_updated_at"
+                        ) or pers.get("fragment_applied_at")
+                        for aspect, score in vector.items():
+                            data[f"personality_{aspect}"] = score
+            except ClientError:
+                _LOGGER.debug("/personality not available")
 
         except ClientError as err:
             raise UpdateFailed(f"Error communicating with Grok Voice service: {err}") from err

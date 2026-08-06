@@ -1,27 +1,20 @@
 """Personality modulator state tracking and push to microservice."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers.event import (
-    async_track_state_change_event,
-    async_track_time_interval,
-)
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_track_time_interval
 
 from .const import CONF_PERSONALITY_MODULATORS
 
 _LOGGER = logging.getLogger(__name__)
 
-# Coalesce rapid sensor updates
-_DEBOUNCE_SECONDS = 5.0
-
 
 class PersonalityTracker:
-    """Track HA entity states for enabled modulators and POST to microservice."""
+    """Push modulator entity states on a fixed interval (default 15 min)."""
 
     def __init__(
         self,
@@ -29,17 +22,15 @@ class PersonalityTracker:
         entry_id: str,
         get_modulators: Callable[[], list[dict[str, Any]]],
         post_states: Callable[[dict[str, float], str], Any],
-        interval_seconds: int = 20,
+        interval_seconds: int = 900,
     ) -> None:
         self.hass = hass
         self.entry_id = entry_id
         self._get_modulators = get_modulators
         self._post_states = post_states
-        self._interval = interval_seconds
-        self._unsub_state: Callable[[], None] | None = None
+        self._interval = max(60, int(interval_seconds))  # floor 1 min
         self._unsub_interval: Callable[[], None] | None = None
         self._entity_ids: set[str] = set()
-        self._debounce_task: asyncio.Task | None = None
         self.last_sync_status: str = "never"
         self.last_sync_at: str | None = None
         self.last_error: str | None = None
@@ -48,20 +39,15 @@ class PersonalityTracker:
         await self.async_rebuild()
 
     async def async_stop(self) -> None:
-        if self._debounce_task and not self._debounce_task.done():
-            self._debounce_task.cancel()
-        self._unsubscribe()
-
-    def _unsubscribe(self) -> None:
-        if self._unsub_state:
-            self._unsub_state()
-            self._unsub_state = None
         if self._unsub_interval:
             self._unsub_interval()
             self._unsub_interval = None
 
     async def async_rebuild(self) -> None:
-        self._unsubscribe()
+        if self._unsub_interval:
+            self._unsub_interval()
+            self._unsub_interval = None
+
         mods = self._get_modulators()
         self._entity_ids = {
             m["entity_id"]
@@ -69,41 +55,20 @@ class PersonalityTracker:
             if m.get("enabled", True) and m.get("entity_id")
         }
         if self._entity_ids:
-            self._unsub_state = async_track_state_change_event(
-                self.hass,
-                list(self._entity_ids),
-                self._on_state_change,
-            )
             self._unsub_interval = async_track_time_interval(
                 self.hass,
                 self._on_interval,
                 timedelta(seconds=self._interval),
             )
+            # One immediate push so vector sensors are not empty for 15 min
             await self._async_push_states()
         else:
             self.last_sync_status = "idle"
             self.last_error = None
 
     @callback
-    def _on_state_change(self, event: Event) -> None:
-        self._schedule_debounced_push()
-
-    @callback
     def _on_interval(self, _now) -> None:
         self.hass.async_create_task(self._async_push_states())
-
-    def _schedule_debounced_push(self) -> None:
-        if self._debounce_task and not self._debounce_task.done():
-            self._debounce_task.cancel()
-
-        async def _delayed() -> None:
-            try:
-                await asyncio.sleep(_DEBOUNCE_SECONDS)
-                await self._async_push_states()
-            except asyncio.CancelledError:
-                return
-
-        self._debounce_task = self.hass.async_create_task(_delayed())
 
     async def _async_push_states(self) -> None:
         if not self._entity_ids:

@@ -5,7 +5,7 @@ DOMAIN = "grok_voice"
 DEFAULT_HOST = "192.168.1.100"
 DEFAULT_PORT = 10700
 DEFAULT_SCAN_INTERVAL = 30  # seconds
-DEFAULT_STATE_PUSH_INTERVAL = 20  # seconds for personality states
+DEFAULT_STATE_PUSH_INTERVAL = 900  # 15 minutes
 
 CONF_HOST = "host"
 CONF_PORT = "port"
@@ -32,6 +32,7 @@ MODEL_OPTIONS = [
 ]
 
 SYSTEM_PROMPT_MAX_LENGTH = 8192
+
 
 ASPECT_OPTIONS = [
     "warmth",

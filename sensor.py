@@ -30,6 +30,13 @@ async def async_setup_entry(
         GrokVoiceEstimatedCostSensor(coordinator, entry),
         GrokVoiceActiveSatellitesSensor(coordinator, entry),
         GrokVoicePersonalitySyncSensor(coordinator, entry),
+        GrokVoicePersonalityVectorSensor(coordinator, entry),
+        GrokVoicePersonalityAspectSensor(coordinator, entry, "warmth", "Warmth"),
+        GrokVoicePersonalityAspectSensor(coordinator, entry, "verbosity", "Verbosity"),
+        GrokVoicePersonalityAspectSensor(coordinator, entry, "humor", "Humor"),
+        GrokVoicePersonalityAspectSensor(coordinator, entry, "energy", "Energy"),
+        GrokVoicePersonalityAspectSensor(coordinator, entry, "caution", "Caution"),
+        GrokVoicePersonalityAspectSensor(coordinator, entry, "creativity", "Creativity"),
     ]
     async_add_entities(entities)
 
@@ -141,3 +148,56 @@ class GrokVoicePersonalitySyncSensor(GrokVoiceBaseSensor):
             "last_error": self.coordinator.data.get("personality_last_error"),
             "modulator_count": self.coordinator.data.get("personality_modulator_count", 0),
         }
+        
+class GrokVoicePersonalityVectorSensor(GrokVoiceBaseSensor):
+    """Summary personality vector + fragment attributes."""
+
+    def __init__(self, coordinator: GrokVoiceDataUpdateCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "personality_vector", "Personality Vector")
+        self._attr_icon = "mdi:chart-radar"
+
+    @property
+    def native_value(self) -> str | None:
+        vec = self.coordinator.data.get("personality_vector") or {}
+        if not vec:
+            return "unknown"
+        # Compact fingerprint for history (e.g. w0.51/c0.25/cr0.00)
+        parts = [f"{k[:2]}{float(v):.2f}" for k, v in sorted(vec.items())]
+        return "/".join(parts)[:255]
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        data = self.coordinator.data
+        attrs = dict(data.get("personality_vector") or {})
+        attrs["fragment"] = data.get("personality_fragment") or ""
+        attrs["fragment_updated_at"] = data.get("personality_fragment_updated_at")
+        attrs["modulator_count"] = data.get("personality_modulator_count", 0)
+        return attrs
+
+
+class GrokVoicePersonalityAspectSensor(GrokVoiceBaseSensor):
+    """Single aspect score 0.0–1.0 for history charts."""
+
+    def __init__(
+        self,
+        coordinator: GrokVoiceDataUpdateCoordinator,
+        entry: ConfigEntry,
+        aspect: str,
+        name: str,
+    ) -> None:
+        super().__init__(coordinator, entry, f"personality_{aspect}", f"Personality {name}")
+        self._aspect = aspect
+        self._attr_icon = "mdi:gauge"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = None
+        self._attr_suggested_display_precision = 3
+
+    @property
+    def native_value(self) -> float | None:
+        val = self.coordinator.data.get(f"personality_{self._aspect}")
+        if val is None:
+            return None
+        try:
+            return round(float(val), 4)
+        except (TypeError, ValueError):
+            return None
