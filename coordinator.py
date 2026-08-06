@@ -211,3 +211,17 @@ class GrokVoiceDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
         except ClientError as err:
             raise UpdateFailed(f"Error posting personality states: {err}") from err
+            
+    async def async_save_modulators(self, modulators: list[dict[str, Any]]) -> None:
+        """Persist modulators to config entry options, push to microservice, rebuild tracker."""
+        from .const import CONF_PERSONALITY_MODULATORS
+
+        opts = dict(self.entry.options)
+        opts[CONF_PERSONALITY_MODULATORS] = modulators
+        self.hass.config_entries.async_update_entry(self.entry, options=opts)
+        await self.async_push_personality_modulators(modulators)
+        if self.personality_tracker:
+            await self.personality_tracker.async_rebuild()
+        await self.async_request_refresh()            
+            
+            

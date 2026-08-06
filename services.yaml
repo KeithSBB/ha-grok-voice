@@ -1,0 +1,170 @@
+add_modulator:
+  name: Add personality modulator
+  description: Add a sensor-driven personality modulator.
+  fields:
+    entity_id:
+      name: Sensor
+      description: Numeric sensor to use as the source
+      required: true
+      selector:
+        entity:
+          domain: sensor
+    aspect:
+      name: Aspect
+      required: true
+      selector:
+        select:
+          options:
+            - warmth
+            - verbosity
+            - humor
+            - energy
+            - caution
+            - creativity
+          mode: dropdown
+    min:
+      name: Min
+      required: true
+      default: 0
+      selector:
+        number:
+          min: -10000
+          max: 10000
+          step: 0.1
+          mode: box
+    max:
+      name: Max
+      required: true
+      default: 100
+      selector:
+        number:
+          min: -10000
+          max: 10000
+          step: 0.1
+          mode: box
+    curve:
+      name: Curve
+      default: linear
+      selector:
+        select:
+          options:
+            - linear
+            - sigmoid
+            - step
+          mode: dropdown
+    weight:
+      name: Weight
+      default: 1.0
+      selector:
+        number:
+          min: 0
+          max: 2
+          step: 0.1
+          mode: box
+    invert:
+      name: Invert
+      default: false
+      selector:
+        boolean:
+    enabled:
+      name: Enabled
+      default: true
+      selector:
+        boolean:
+
+update_modulator:
+  name: Update personality modulator
+  description: Update an existing modulator by id.
+  fields:
+    id:
+      name: Modulator ID
+      required: true
+      selector:
+        text:
+    entity_id:
+      name: Sensor
+      selector:
+        entity:
+          domain: sensor
+    aspect:
+      name: Aspect
+      selector:
+        select:
+          options:
+            - warmth
+            - verbosity
+            - humor
+            - energy
+            - caution
+            - creativity
+          mode: dropdown
+    min:
+      name: Min
+      selector:
+        number:
+          min: -10000
+          max: 10000
+          step: 0.1
+          mode: box
+    max:
+      name: Max
+      selector:
+        number:
+          min: -10000
+          max: 10000
+          step: 0.1
+          mode: box
+    curve:
+      name: Curve
+      selector:
+        select:
+          options:
+            - linear
+            - sigmoid
+            - step
+          mode: dropdown
+    weight:
+      name: Weight
+      selector:
+        number:
+          min: 0
+          max: 2
+          step: 0.1
+          mode: box
+    invert:
+      name: Invert
+      selector:
+        boolean:
+    enabled:
+      name: Enabled
+      selector:
+        boolean:
+
+remove_modulator:
+  name: Remove personality modulator
+  description: Remove a modulator by id (or by entity_id if id omitted).
+  fields:
+    id:
+      name: Modulator ID
+      selector:
+        text:
+    entity_id:
+      name: Sensor
+      selector:
+        entity:
+          domain: sensor
+
+set_modulator_enabled:
+  name: Enable/disable personality modulator
+  description: Toggle a modulator without changing other fields.
+  fields:
+    id:
+      name: Modulator ID
+      required: true
+      selector:
+        text:
+    enabled:
+      name: Enabled
+      required: true
+      selector:
+        boolean:
